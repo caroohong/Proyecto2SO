@@ -7,6 +7,9 @@
 #include "proc.h"
 #include "spinlock.h"
 
+// #define NUM_KEYS (8)
+// #define NUM_PAGES (4)
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -130,7 +133,17 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
+  p->shmem_size = 0;
 
+  // // Initialise shared pages, while allocating proc
+  // for(int i = 0; i < SHAREDREGIONS; i++) {
+  //   // default values
+  //   p->pages[i].key = -1;
+  //   p->pages[i].shmid = -1;
+  //   p->pages[i].size  = 0;
+  //   p->pages[i].perm = PTE_W | PTE_U;
+  //   p->pages[i].virtualAddr = (void *)0;
+  // }
   return p;
 }
 
@@ -218,6 +231,9 @@ fork(void)
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
+  np->shmem_size = curproc->shmem_size;
+  np->shmem_token = curproc->shmem_token;
+  np->startaddr = curproc->startaddr;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -230,6 +246,19 @@ fork(void)
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
   pid = np->pid;
+
+  // // copy shared pages values from parent to child
+  // for(int i = 0; i < SHAREDREGIONS; i++) {
+  //   if(curproc->pages[i].key != -1 && curproc->pages[i].shmid != -1) {
+  //     np->pages[i] = curproc->pages[i];
+  //     // get valid shmid index in shmtable-allRegions struct
+  //     int index = getShmidIndex(np->pages[i].shmid);
+  //     if(index != -1) {
+  //       // map them to child's address space
+  //       mappagesWrapper(np, index, i);
+  //     }
+  //   }
+  // }
 
   acquire(&ptable.lock);
 
@@ -260,7 +289,14 @@ exit(void)
       curproc->ofile[fd] = 0;
     }
   }
-
+  // dec_ref_count(curproc);
+  // // detach, attached shared regions
+  // for(int i = 0; i < SHAREDREGIONS; i++) {
+  //   if(curproc->pages[i].shmid != -1 && curproc->pages[i].key != -1) {
+  //     // wrapper that calls detach
+  //     shmdtWrapper(curproc->pages[i].virtualAddr);
+  //   }
+  // }
   begin_op();
   iput(curproc->cwd);
   end_op();
@@ -550,4 +586,70 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+int shmget(uint token, char* addr, uint size) {
+  
+  if (argint(0, &token) < 0 || argptr(1, &addr, sizeof(char*)) < 0 || argint(2, &size) < 0) {
+    return -1; // Verifica los argumentos
+  }
+
+  if (size < 0 || (uint)addr < 0x60000000 || (uint)addr + size >= KERNBASE) {
+    return -1; // Verifica errores de tamaño y dirección
+  }
+
+  struct proc *curproc = myproc();
+
+  // Buscar un proceso con el mismo token
+  struct proc *existing_proc = shmem_procpid(token);
+
+  if (existing_proc) {
+    uint token = existing_proc->shmem_token;
+    char* shared_addr = existing_proc->shmem_ptr;
+    uint shared_size = existing_proc->shmem_size;
+    // Si al invocar shmget con valor size mayor que cero ya existe una 
+    // región de memoria compartida asociada al mismo token especificado.
+    if (size > shared_size)
+      return -1;
+      
+    // La región de memoria compartida ya existe, copia las entradas de la tabla de página
+    if (copy_pte_range(curproc->pgdir, existing_proc->pgdir, (uint)addr, (uint)addr, size) < 0) {
+      return -1; // Error al copiar entradas de la tabla de página
+    }
+    curproc->shmem_ptr = addr;
+    curproc->shmem_token = token;
+    curproc->shmem_size = size;
+  } 
+  else {
+    // La región de memoria compartida no existe, crea una nueva.
+    char* shared_addr = addr;
+    shared_addr = (char *)PGROUNDDOWN((uint)shared_addr);
+
+    // Calcula el tamaño real necesario para contener size bytes.
+    uint aligned_size = PGROUNDUP(size);
+
+    // Asegúrate de que no estés ocupando memoria del kernel (por ejemplo, el kernel comienza en KERNBASE).
+    if ((uint)shared_addr + aligned_size >= KERNBASE) {
+      return -1; // Error: dirección en el rango del kernel.
+    }
+
+    // Asigna páginas físicas y mapea en la tabla de páginas.
+    create_shared_memory_region(curproc, shared_addr, token, size);
+
+    curproc->shmem_ptr = shared_addr;
+    curproc->shmem_token = token;
+    curproc->shmem_size = size;
+
+    //**************************
+    // // La región de memoria compartida no existe, crea una nueva región
+    // void* shared_mem_addr = create_shared_memory_region(curproc, size);
+    // if (shared_mem_addr == 0) {
+    //   return -1; // Error al crear la región de memoria compartida
+    // }
+    
+    // // Actualiza el token del proceso actual
+    // curproc->shmem_token = token;
+  }
+
+  return 0; // Retorna 0 cuando todo termina exitosamente.
 }

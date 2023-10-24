@@ -1,3 +1,5 @@
+#ifndef _DEFS_H
+#define _DEFS_H
 struct buf;
 struct context;
 struct file;
@@ -186,5 +188,17 @@ void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
 
+// void            shmeminit(void);
+// void            dec_ref_count(struct proc*);
+// void*           shmgetat(int,int);
+// int             shm_refcount(int);
+
+void            sharedMemoryInit(void);
+int             getShmidIndex(int);
+void            mappagesWrapper(struct proc *process, int, int);
+void            shmdtWrapper(void *);
+
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+#endif // _DEFS_H

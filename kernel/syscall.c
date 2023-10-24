@@ -104,6 +104,11 @@ extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
 
+// shared memory
+extern int sys_shmget(void);
+// extern int sys_shmgetat(void);
+// extern int sys_shm_refcount(void);
+
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,
@@ -125,7 +130,8 @@ static int (*syscalls[])(void) = {
 [SYS_unlink]  sys_unlink,
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
-[SYS_close]   sys_close
+[SYS_close]   sys_close,
+[SYS_shmget]  sys_shmget,
 };
 
 void

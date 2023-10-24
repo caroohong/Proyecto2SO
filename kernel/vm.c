@@ -7,6 +7,18 @@
 #include "proc.h"
 #include "elf.h"
 
+// #include "shm.h"
+// #include "ipc.h"
+// #include "spinlock.h"
+
+#define NUM_KEYS (8)
+#define NUM_PAGES (4)
+int is_key_used[NUM_KEYS];
+void *key_page_addrs[NUM_KEYS][NUM_PAGES];
+int num_key_pages[NUM_KEYS];
+int key_ref_count[NUM_KEYS];
+uint top;
+
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
 
@@ -78,6 +90,62 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
   }
   return 0;
 }
+
+int shmmanip(uint token, char *addr, uint size) {
+ 
+   uint a = (uint) addr;
+   char *mem;
+ 
+   // Asserts 
+   if((uint)addr+size  >= KERNBASE)
+     return -1;
+ 
+   a = PGROUNDUP(a);
+   if (size == 0) {
+ 
+     if (myproc()->shmem_token != token) {
+       cprintf("Differetn token than %d", myproc()->shmem_token);
+       return -1;
+     }
+ 
+     // Loop through parent directory structure through proc->parent->pgdir
+     // and get the page where va == proc->startaddr
+     // and then copy the next n pages on to this addr.
+ 
+     pde_t *ppgdir = myproc()->parent->pgdir;
+     pte_t *pte;
+     uint pa;
+     uint i = (uint) myproc()->parent->startaddr;
+     uint end = ((uint) myproc()->parent->startaddr + myproc()->parent->shmem_size);
+     for(; i < end; i += PGSIZE, a+=PGSIZE){
+       if((pte = walkpgdir(ppgdir, (void *) i, 0)) == 0)
+         panic("shmget: pte should exist");
+       if(!(*pte & PTE_P))
+         panic("shmget: page not present");
+       pa = PTE_ADDR(*pte);
+       mappages(myproc()->pgdir, (char*) a, PGSIZE, pa, PTE_W|PTE_U);
+     }
+     return 0;
+   }
+ 
+   myproc()->startaddr = (void*) 0;
+   for (; a < (uint)addr + size; a += PGSIZE) {
+     mem = kalloc();
+     if (mem == 0) {
+       cprintf("shmget out of memory\n");
+       return -1;
+     }
+     memset(mem, 0, PGSIZE);
+     //mappages(proc->pgdir, (char*) a, PGSIZE, v2p(mem), PTE_W|PTE_U);
+     if (myproc()->startaddr == 0) {
+       myproc()->startaddr = (char*)a;
+     }
+   }
+ 
+   myproc()->shmem_token = token;
+   myproc()->shmem_size = size;
+   return 0;
+ }
 
 // There is one page table per process, plus one that's used when
 // a CPU is not running any process (kpgdir). The kernel uses the
@@ -288,7 +356,25 @@ freevm(pde_t *pgdir)
   if(pgdir == 0)
     panic("freevm: no pgdir");
   deallocuvm(pgdir, KERNBASE, 0);
+  // deallocuvm(pgdir, HEAPLIMIT, 0);
   for(i = 0; i < NPDENTRIES; i++){
+    /*
+    if(pgdir[i] & PTE_P) {
+      for (j = 0; j < NUM_KEYS; j++) {
+        if (key_ref_count[i] != 0) {  // Shared page is being used. Not to be freed for sure.
+          break;
+        }
+        for(k = 0; k < NUM_PAGES; k++) {
+          if((char*)PTE_ADDR(pgdir[i]) == key_page_addrs[i][k]) {
+            break;
+          }
+        }
+      }
+      // Dont free the shared pages that are being used used
+      if (j == NUM_KEYS && k == NUM_PAGES)
+        kfree((char*)PTE_ADDR(pgdir[i]));
+    }
+    */
     if(pgdir[i] & PTE_P){
       char * v = P2V(PTE_ADDR(pgdir[i]));
       kfree(v);
@@ -336,6 +422,33 @@ copyuvm(pde_t *pgdir, uint sz)
       kfree(mem);
       goto bad;
     }
+    /*
+    int j, k;
+    for(i = myproc()->top; i < USERTOP; i += PGSIZE){
+      if((pte = walkpgdir(pgdir, (void*)i, 0)) == 0)
+        panic("copyuvm: pte should exist");
+      if(!(*pte & PTE_P))
+        panic("copyuvm: page not present");
+      pa = PTE_ADDR(*pte);
+
+      for(j = 0; j < NUM_KEYS; j++) {
+        for(k = 0; k < NUM_PAGES; k++) {
+          if(myproc()->page_addrs[i][j] == (void*)i){
+            break;
+          }
+        }
+      }
+      if(mappages(d, (void*)i, PGSIZE, PADDR(key_page_addrs[j][k]), PTE_W|PTE_U) < 0)
+        goto bad;
+    }
+    
+  }
+  // Increase ref counts for use by child process
+  for(i = 0; i < NUM_KEYS; i++) {
+    if(myproc()->keys[i] == 1) {
+      key_ref_count[i]++;
+    }
+    */
   }
   return d;
 
@@ -384,11 +497,136 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
   }
   return 0;
 }
+void* 
+create_shared_memory_region(struct proc* p, uint size) {
+  if (size == 0) {
+    return 0; // Tamaño inválido, no se puede crear una región de memoria compartida vacía
+  }
 
-//PAGEBREAK!
-// Blank page.
-//PAGEBREAK!
-// Blank page.
-//PAGEBREAK!
-// Blank page.
+  void* addr = kalloc(); // Asigna una página de memoria
+  if (addr == 0) {
+    return 0; // Error: no hay suficiente memoria disponible
+  }
+
+  uint aligned_size = PGROUNDUP(size); // Redondea el tamaño al múltiplo de tamaño de página
+  for (uint offset = 0; offset < aligned_size; offset += PGSIZE) {
+    if (mappages(p->pgdir, (char*)p->sz, PGSIZE, V2P(addr + offset), PTE_W | PTE_U) < 0) {
+      // Error al mapear la página
+      kfree(addr); // Libera la página de memoria previamente asignada
+      return 0;
+    }
+    p->sz += PGSIZE; // Incrementa el tamaño del proceso
+  }
+
+  return addr; // Devuelve la dirección de inicio de la región de memoria compartida
+}
+
+
+int 
+copy_pte_range(pde_t *dst_pgdir, pde_t *src_pgdir, uint dst_va, uint src_va, uint size) {
+  uint page_offset;
+  pte_t *src_pte, *dst_pte;
+
+  // Asegurarse de que los punteros a los directorios de página sean válidos.
+  if (src_pgdir == 0 || dst_pgdir == 0) {
+    return -1; // Error: punteros nulos
+  }
+
+  // Recorre la región y copia las entradas de la tabla de página.
+  for (uint offset = 0; offset < size; offset += PGSIZE) {
+    src_pte = walkpgdir(src_pgdir, (void *)(src_va + offset), 0);
+    dst_pte = walkpgdir(dst_pgdir, (void *)(dst_va + offset), 1);
+
+    if (src_pte == 0 || dst_pte == 0) {
+      return -1; // Error: no se pueden encontrar entradas de tabla de página
+    }
+
+    // Copia la entrada de la tabla de página del proceso fuente al proceso destino.
+    *dst_pte = *src_pte;
+  }
+
+  return 0; // Copia exitosa
+}
+// void
+// shmeminit(void) {
+//   int i, j;
+//   for (i = 0; i < NUM_KEYS; i++) {
+//     is_key_used[i] = 0;
+//     num_key_pages[i] = 0;
+//     key_ref_count[i] = 0;
+//     for(j = 0; j < NUM_PAGES; j++) {
+//       key_page_addrs[i][j] = NULL;
+//     }
+//   }
+//   top = USERTOP;
+// }
+
+// void*
+// shmgetat(int key, int num_pages)
+// {
+//   int i;
+//   // Check for valid params
+//   if (key < 0 || key > 7) {
+//     return (void*)-1;
+//   }
+//   if (num_pages < 1 || num_pages > 4) {
+//     return (void*)-1;
+//   }
+
+//   // Update ref count if process isnt already using this key
+//   if (myproc()->keys[key] == 0) {
+//     key_ref_count[key]++;
+//     myproc()->keys[key] = 1;
+//   }
+
+//   // Return existing page mapping if key has already been used
+//   if (is_key_used[key] == 1) {
+//     for(i = 0; i < num_pages; i++) {
+//       // map to phy add
+//     }
+//     return key_page_addrs[key][num_key_pages[key]-1];
+
+//   } else { // Create a new mapping
+//     // Check if trying to access already allocated memory
+//     if ((top - num_pages*PGSIZE) < myproc()->sz) {
+//       return (void*)-1;
+//     }
+//     // Allocate memory and make the mappings
+//     char* mem;
+//     for(i = 0; i < num_pages; i++) {
+//       mem = kalloc();  // Physical memory
+//       if (mem == 0) {
+//         cprintf("allocuvm out of memory\n");
+//         return (void*)-1;
+//       }
+//       memset(mem, 0, PGSIZE);
+
+//       // VP
+//       void* addr = (void*)(top - PGSIZE);  // address of available page.
+//       // change address of next available page.
+//       top -= PGSIZE;
+
+//       // Map vp to pp
+//       mappages(myproc()->pgdir, addr, PGSIZE, PADDR(mem), PTE_W|PTE_U);
+
+//       key_page_addrs[key][i] = addr;
+//     }
+//     is_key_used[key] = 1;
+//     num_key_pages[key] = num_pages;
+
+//     return (void*)top;
+//   }
+// }
+
+// // This call returns, for a particular key, how many processes currently are
+// // sharing the associated pages.
+// int
+// shm_refcount(int key)
+// {
+//   // Check for valid params
+//   if (key < 0 || key > 7) {
+//     return -1;
+//   }
+//   return key_ref_count[key];
+// }
 

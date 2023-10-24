@@ -1,3 +1,14 @@
+#ifndef _PROC_H_
+#define _PROC_H_
+
+#define SEG_KCODE 1  // kernel code
+#define SEG_KDATA 2  // kernel data+stack
+#define SEG_KCPU  3  // kernel per-cpu data
+#define SEG_UCODE 4  // user code
+#define SEG_UDATA 5  // user data+stack
+#define SEG_TSS   6  // this process's task state
+#define NSEGS     7
+
 // Per-CPU state
 struct cpu {
   uchar apicid;                // Local APIC ID
@@ -34,6 +45,15 @@ struct context {
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+// Shared memory
+#define SHAREDREGIONS 64 // same as marco in memlayout.h
+
+typedef struct sharedPages {
+  uint key, size;
+  int shmid,perm;
+  void *virtualAddr;
+} sharedPages;
+
 // Per-process state
 struct proc {
   uint sz;                     // Size of process memory (bytes)
@@ -52,6 +72,11 @@ struct proc {
   uint shmem_token;            // Shared memory region identifier
   uint shmem_size;             // Shared memory region size
   uint shmem_ptr;              // Pointer to shared memory region
+  char * startaddr;            // Virtual address of the start region of their shmem
+  // int keys[8];
+  // int top;
+  // void * page_addrs[8][4];
+  // sharedPages pages[SHAREDREGIONS];
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -59,3 +84,4 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+#endif // _PROC_H_

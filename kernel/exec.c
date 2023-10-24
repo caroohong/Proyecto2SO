@@ -7,6 +7,8 @@
 #include "x86.h"
 #include "elf.h"
 
+#define NUM_KEYS
+#define NUM_PAGES
 int
 exec(char *path, char **argv)
 {
@@ -18,6 +20,16 @@ exec(char *path, char **argv)
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
+  // //Decrementar ref_count
+  // dec_ref_count(curproc);
+  // int j;
+  // for(i = 0; i < NUM_KEYS; i++) {
+  //   curproc->keys[i] = 0;
+  //   for (j = 0; j < NUM_PAGES; j++)
+  //   {
+  //     curproc->page_addrs[i][j] = NULL;
+  //   }
+  // }
 
   begin_op();
 
@@ -92,6 +104,12 @@ exec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(curproc->name, last, sizeof(curproc->name));
+
+  // for(int i = 0; i < SHAREDREGIONS; i++) {
+  //   if(curproc->pages[i].shmid != -1 && curproc->pages[i].key != -1) {
+  //     shmdtWrapper(curproc->pages[i].virtualAddr);
+  //   }
+  // }
 
   // Commit to the user image.
   oldpgdir = curproc->pgdir;
