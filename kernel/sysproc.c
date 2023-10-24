@@ -113,13 +113,13 @@ sys_shm_refcount(void)
 }
 */
 
-// memoria compartida
-
+// shared memory
 extern int shmget(uint, uint, int);
 // extern int shmdt(void*);
 // extern void * shmat(int, void*, int);
 // extern int shmctl(int, int, void*);
 
+// shared memory
 int
 sys_shmget(void) {
 

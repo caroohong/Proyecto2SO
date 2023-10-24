@@ -45,7 +45,7 @@ struct context {
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-// Shared memory
+// Shared-memory
 #define SHAREDREGIONS 64 // same as marco in memlayout.h
 
 typedef struct sharedPages {
@@ -69,6 +69,7 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  // shared memory
   uint shmem_token;            // Shared memory region identifier
   uint shmem_size;             // Shared memory region size
   uint shmem_ptr;              // Pointer to shared memory region

@@ -497,6 +497,8 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
   }
   return 0;
 }
+
+// shared memory
 void* 
 create_shared_memory_region(struct proc* p, uint size) {
   if (size == 0) {
@@ -521,7 +523,7 @@ create_shared_memory_region(struct proc* p, uint size) {
   return addr; // Devuelve la dirección de inicio de la región de memoria compartida
 }
 
-
+// shared memory
 int 
 copy_pte_range(pde_t *dst_pgdir, pde_t *src_pgdir, uint dst_va, uint src_va, uint size) {
   uint page_offset;
