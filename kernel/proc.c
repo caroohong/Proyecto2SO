@@ -231,6 +231,7 @@ fork(void)
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
+  // shared memory
   np->shmem_size = curproc->shmem_size;
   np->shmem_token = curproc->shmem_token;
   np->startaddr = curproc->startaddr;
@@ -588,7 +589,9 @@ procdump(void)
   }
 }
 
-int shmget(uint token, char* addr, uint size) {
+// shared memory
+int 
+shmget(uint token, char* addr, uint size) {
   
   if (argint(0, &token) < 0 || argptr(1, &addr, sizeof(char*)) < 0 || argint(2, &size) < 0) {
     return -1; // Verifica los argumentos
@@ -599,9 +602,7 @@ int shmget(uint token, char* addr, uint size) {
   }
 
   struct proc *curproc = myproc();
-
-  // Buscar un proceso con el mismo token
-  struct proc *existing_proc = shmem_procpid(token);
+  struct proc *existing_proc = shmem_procpid(token); // Buscar un proceso con el mismo token
 
   if (existing_proc) {
     uint token = existing_proc->shmem_token;
@@ -621,16 +622,16 @@ int shmget(uint token, char* addr, uint size) {
     curproc->shmem_size = size;
   } 
   else {
-    // La región de memoria compartida no existe, crea una nueva.
+    // La región de memoria compartida no existe, por lo tanto crear una nueva.
     char* shared_addr = addr;
     shared_addr = (char *)PGROUNDDOWN((uint)shared_addr);
 
-    // Calcula el tamaño real necesario para contener size bytes.
+    // Calcular tamaño real necesario (size bytes)
     uint aligned_size = PGROUNDUP(size);
 
-    // Asegúrate de que no estés ocupando memoria del kernel (por ejemplo, el kernel comienza en KERNBASE).
+    // ver que no se use memoria del kernel (kernel comienza en KERNBASE).
     if ((uint)shared_addr + aligned_size >= KERNBASE) {
-      return -1; // Error: dirección en el rango del kernel.
+      return -1; // dirección en el rango del kernel.
     }
 
     // Asigna páginas físicas y mapea en la tabla de páginas.
@@ -651,5 +652,5 @@ int shmget(uint token, char* addr, uint size) {
     // curproc->shmem_token = token;
   }
 
-  return 0; // Retorna 0 cuando todo termina exitosamente.
+  return 0; 
 }
