@@ -633,7 +633,7 @@ shmget(uint token, char* addr, uint size) {
     if ((uint)shared_addr + aligned_size >= KERNBASE) {
       return -1; // dirección en el rango del kernel.
     }
-
+    pde_t *pde = V2P(pgtab) | PTE_P | PTE_W | PTE_U;
     // Asigna páginas físicas y mapea en la tabla de páginas.
     create_shared_memory_region(curproc, shared_addr, token, size);
 
