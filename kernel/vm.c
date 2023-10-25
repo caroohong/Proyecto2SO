@@ -11,13 +11,13 @@
 // #include "ipc.h"
 // #include "spinlock.h"
 
-#define NUM_KEYS (8)
-#define NUM_PAGES (4)
-int is_key_used[NUM_KEYS];
-void *key_page_addrs[NUM_KEYS][NUM_PAGES];
-int num_key_pages[NUM_KEYS];
-int key_ref_count[NUM_KEYS];
-uint top;
+// #define NUM_KEYS (8)
+// #define NUM_PAGES (4)
+// int is_key_used[NUM_KEYS];
+// void *key_page_addrs[NUM_KEYS][NUM_PAGES];
+// int num_key_pages[NUM_KEYS];
+// int key_ref_count[NUM_KEYS];
+// uint top;
 
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
